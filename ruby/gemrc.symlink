@@ -3,4 +3,8 @@
 :verbose: true
 :backtrace: false
 :benchmark: false
+:bulk_threshold: 1000
 gem: --no-document
+:sources:
+- http://rubygems.org/
+- http://gems.github.com
