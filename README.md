@@ -1,8 +1,14 @@
 ## dotfiles
 
-These dotfiles have been branched from holman's dotfiles
+These dotfiles have been branched from
+[holman's dotfiles](https://github.com/holman/dotfiles). Most of the stuff
+holman uses I like, but I wanted some tweaks. I would suggest starting from his
+repo, but if you want to start from mine, Feel free to keep reading.
 
 ## install
+
+First things first, if you aren't using zsh...
+[Install it](https://github.com/robbyrussell/oh-my-zsh).
 
 Run this:
 
@@ -15,8 +21,8 @@ script/bootstrap
 This will symlink the appropriate files in `.dotfiles` to your home directory.
 Everything is configured and tweaked within `~/.dotfiles`.
 
-The main file you'll want to change right off the bat is `zsh/zshrc.symlink`,
-which sets up a few paths that'll be different on your particular machine.
+You will want to change the `zsh/zshrc.symlink`, this file has two paths in
+paticuliar you will want to change: `PROJECTS` and `ZSH`.
 
 `dot` is a simple script that installs some dependencies, sets sane OS X
 defaults, and so on. Tweak this script, and occasionally run `dot` from
@@ -63,14 +69,6 @@ said, I do use this as *my* dotfiles, so there's a good chance I may break
 something if I forget to make a check for a dependency.
 
 If you're brand-new to the project and run into any blockers, please
-[open an issue](https://github.com/holman/dotfiles/issues) on this repository
+[open an issue](https://github.com/bhardin/dotfiles/issues) on this repository
 and I'd love to get it fixed for you!
 
-## thanks
-
-I forked [Ryan Bates](http://github.com/ryanb)' excellent
-[dotfiles](http://github.com/ryanb/dotfiles) for a couple years before the
-weight of my changes and tweaks inspired me to finally roll my own. But Ryan's
-dotfiles were an easy way to get into bash customization, and then to jump ship
-to zsh a bit later. A decent amount of the code in these dotfiles stem or are
-inspired from Ryan's original project.
