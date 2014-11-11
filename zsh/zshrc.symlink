@@ -41,5 +41,6 @@ unset config_files
 
 ZSH=$HOME/.oh-my-zsh
 ZSH_THEME="muse"
+plugins=(bundler git sublime)
 
 source $ZSH/oh-my-zsh.sh
