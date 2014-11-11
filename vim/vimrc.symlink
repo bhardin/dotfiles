@@ -1,4 +1,4 @@
-syntax on
-
-" Wrap gitcommit file types at the appropriate length
-filetype indent plugin on
+set smartindent
+set tabstop=2
+set shiftwidth=2
+set expandtab
