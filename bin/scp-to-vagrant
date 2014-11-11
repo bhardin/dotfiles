@@ -1,0 +1,10 @@
+#!/bin/bash
+ 
+# Change these settings to match what you are wanting to do
+FROM_PATH=$1
+SERVER=localhost
+TO_PATH=$2
+
+OPTIONS=`/usr/bin/vagrant ssh-config | /usr/bin/awk -v ORS=' ' '{print "-o " $1 "=" $2}'`
+
+scp $OPTIONS $FROM_PATH vagrant@$SERVER:$TO_PATH
