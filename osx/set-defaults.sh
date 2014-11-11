@@ -25,3 +25,6 @@ defaults write NSGlobalDomain KeyRepeat -int 0
 # Set the Finder prefs for showing a few different volumes on the Desktop.
 defaults write com.apple.finder ShowExternalHardDrivesOnDesktop -bool true
 defaults write com.apple.finder ShowRemovableMediaOnDesktop -bool true
+
+# Show hidden files in finder
+defaults write com.apple.finder AppleShowAllFiles YES
