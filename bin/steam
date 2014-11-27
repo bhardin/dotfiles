@@ -1,21 +1,15 @@
 #!/usr/bin/env ruby
 #
-# A script to list out steam sale games
+# A script to interact with steam
 
 require 'rubygems'
 require 'json'
 require 'httparty'
 require 'ap'
-require 'formatador'
-
-#!/usr/bin/env ruby
-#
-# A script to list out dota things
-
 require 'steam-condenser'
 require 'formatador'
 require 'duration'
-require "thor"
+require 'thor'
 
 class DotaTest < Thor
 	class Steam
