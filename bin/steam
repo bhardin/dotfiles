@@ -1,0 +1,127 @@
+#!/usr/bin/env ruby
+#
+# A script to list out steam sale games
+
+require 'rubygems'
+require 'json'
+require 'httparty'
+require 'ap'
+require 'formatador'
+
+#!/usr/bin/env ruby
+#
+# A script to list out dota things
+
+require 'steam-condenser'
+require 'formatador'
+require 'duration'
+require "thor"
+
+class DotaTest < Thor
+	class Steam
+	  include HTTParty
+	  base_uri 'store.steampowered.com'
+
+	  def featured
+	    self.class.get("/api/featured")
+	  end
+
+	  def sales
+	  	self.class.get("/api/salepage/")
+		end
+	end
+
+	DATA_TO_SHOW = ["name", "expires", "discount_percent", "final_price"]
+	HOT = "red"
+	GOOD = "green"
+
+  desc "sale", "List steam games for sale"
+  option :sort, default: "expires",
+					      desc: "Sort by different columns. options: #{DATA_TO_SHOW}"
+  def sale
+  	steam = Steam.new
+		steam.featured.each do |data|
+			# only show main ones
+			next if data[0] != "large_capsules"
+
+			game_data = normalize_data(data[1])
+
+			# Sort data by playtime
+			sort_method = options[:sort].to_s
+			sort_method = "discount_expiration" if options[:sort] == "expires"
+
+			game_data = game_data.sort_by { |v| v[sort_method] }
+
+			Formatador.display_table(game_data, DATA_TO_SHOW)
+		end
+  end
+
+  GAMELIST_OPTIONS = [:name, :time, :percentage]
+
+  desc "gamelist USERNAME", "List games that a user has"
+  option :sort, default: :time,
+								desc: "Sort by different columns. options: #{GAMELIST_OPTIONS}"
+  def gamelist(name)
+  	id = SteamId.new(name)
+		games = id.games
+		report = []
+		total_game_time = 0
+
+		games.each do |game_id, game_data|
+			game = {}
+
+			minutes_of_playtime = id.total_playtime(game_id)
+			total_game_time += minutes_of_playtime
+			game[:time] = Duration.new(:minutes => minutes_of_playtime).format("%w %~w, %d %~d, %h %~h")
+			game[:minutes] = minutes_of_playtime
+			game[:name] = game_data.name
+
+			report.push(game)
+		end
+
+		# Add percentage
+		report.each do |game|
+			 decimal = game[:minutes] / total_game_time.to_f
+			 game[:percentage] = "#{(decimal * 100).round(2)}" + " %"
+		end
+
+		# Sort data by playtime
+		sort_method = options[:sort].to_sym
+		sort_method = :minutes if options[:sort] == :time
+
+		puts sort_method
+
+		report = report.sort_by  { |v| v[sort_method] }
+
+		# Print data
+		Formatador.display_table(report, GAMELIST_OPTIONS)
+  end
+
+  private
+  def normalize_data(game_data)
+		new_game_data = []
+
+		game_data.each do |game|
+			# Don't care about non-discounted games
+			next if game["discount_expiration"] == nil
+			next if game["discounted"] == false
+
+			game["expires"] = Time.at(game["discount_expiration"]).strftime("%b %d")
+			game["final_price"] = "$#{game['final_price']/100.to_f}"
+			game["original_price"] = "$#{game['original_price']/100.to_f}"
+
+			# colorize
+			if game["discount_percent"] >= 75
+				game["discount_percent"] = "[#{HOT}]#{game['discount_percent']}[/]"
+			elsif game["discount_percent"] >= 33
+				game["discount_percent"] = "[#{GOOD}]#{game['discount_percent']}[/]"
+			end
+
+			new_game_data.push game
+		end
+
+		new_game_data
+	end
+end
+
+DotaTest.start(ARGV)
