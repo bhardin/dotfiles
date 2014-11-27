@@ -1,0 +1,94 @@
+#!/usr/bin/env ruby
+#
+# A script to list out steam sale games
+
+require 'rubygems'
+require 'json'
+require 'httparty'
+require 'ap'
+require 'formatador'
+
+HOT = "red"
+GOOD = "green"
+
+class Steam
+  include HTTParty
+  base_uri 'store.steampowered.com'
+
+  def featured
+    self.class.get("/api/featured")
+  end
+end
+
+def remove_unnecessary_data(game_data)
+	new_game_data = []
+
+	game_data.each do |game|
+		# Don't care about non-discounted games
+		next if game["discount_expiration"] == nil
+		next if game["discounted"] == false
+
+		# Don't need all the columns
+		game.delete("type")
+		game.delete("currency")
+		game.delete("large_capsule_image")
+		game.delete("small_capsule_image")
+		game.delete("windows_available")
+		game.delete("mac_available")
+		game.delete("linux_available")
+		game.delete("header_image")
+		game.delete("headline")
+		game.delete("controller_support")
+		game.delete("discounted")
+
+		new_game_data.push game
+	end
+
+	new_game_data
+end
+
+def clean_data(game_data)
+	new_game_data = []
+
+	game_data.each do |game|
+		game["expires"] = Time.at(game["discount_expiration"]).strftime("%b %d")
+		game.delete("discount_expiration")
+
+		game["final_price"] = "$#{game['final_price']/100.to_f}"
+		game["original_price"] = "$#{game['original_price']/100.to_f}"
+
+		new_game_data.push game
+	end
+
+	new_game_data
+end
+
+def colorize(game_data)
+	game_data.each do |game|
+		if game["discount_percent"] >= 75
+			game["discount_percent"] = "[#{HOT}]#{game['discount_percent']}[/]"
+		elsif game["discount_percent"] >= 33
+			game["discount_percent"] = "[#{GOOD}]#{game['discount_percent']}[/]"
+		end
+	end
+
+	game_data
+end
+
+def sort(game_data)
+	# game_data.sort_by { |v| v["discount_percent"] }
+	game_data.sort_by { |v| v["discount_expiration"] }
+end
+
+steam = Steam.new
+steam.featured.each do |data|
+	# only show main ones
+	next if data[0] != "large_capsules"
+
+	game_data = remove_unnecessary_data(data[1])
+	game_data = sort(game_data)
+	game_data = clean_data(game_data)
+	game_data = colorize(game_data)
+
+	Formatador.display_table(game_data)
+end
