@@ -10,112 +10,370 @@ require 'steam-condenser'
 require 'formatador'
 require 'duration'
 require 'thor'
+require 'nokogiri'
 
 class DotaTest < Thor
-	class Steam
-	  include HTTParty
-	  base_uri 'store.steampowered.com'
+  class Steam
+    include HTTParty
+    base_uri 'store.steampowered.com'
 
-	  def featured
-	    self.class.get("/api/featured")
-	  end
+    def featured
+      self.class.get("/api/featured")
+    end
 
-	  def sales
-	  	self.class.get("/api/salepage/")
-		end
-	end
+    def sales
+      self.class.get("/api/salepage/")
+    end
+  end
 
-	DATA_TO_SHOW = ["name", "expires", "discount_percent", "final_price"]
-	HOT = "red"
-	GOOD = "green"
+  class GameItemSchema
+    # Returns the application ID of the game this item schema belongs to
+    #
+    # @return [Fixnum] The application ID of the game
+    attr_reader :app_id
+
+    # The attributes defined for this game's items
+    #
+    # @return [Hash<Symbol, Object>] This item schema's attributes
+    attr_reader :attributes
+
+    # The effects defined for this game's items
+    #
+    # @return [Hash<Symbol, Object>] This item schema's effects
+    attr_reader :effects
+
+    # The levels defined for this game's items
+    #
+    # @return [Hash<Symbol, Object>] This item schema's item levels
+    attr_reader :item_levels
+
+    # A mapping from the item name to the item's defindex
+    #
+    # @return [Hash<Symbol, Object>] The item name mapping
+    attr_reader :item_names
+
+    # The item sets defined for this game's items
+    #
+    # @return [Hash<Symbol, Object>] This item schema's item sets
+    attr_reader :item_sets
+
+    # The items defined for this game
+    #
+    # @return [Hash<Symbol, Object>] The items in this schema
+    attr_reader :items
+
+    # The language of this item schema
+    #
+    # @return [Symbol] The language of this item schema
+    attr_reader :language
+
+    # The item origins defined for this game's items
+    #
+    # @return [Array<String>] This item schema's origins
+    attr_reader :origins
+
+    # The item qualities defined for this game's items
+    #
+    # @return [Array<String>] This item schema's qualities
+    attr_reader :qualities
+
+    # Creates a new item schema for the game with the given application ID and
+    # with descriptions in the given language
+    #
+    # @param [Fixnum] app_id The application ID of the game
+    # @param [Symbol] language The language of description strings
+    # @macro cacheable
+    def initialize(app_id, language = nil)
+      @app_id   = app_id
+      @language = language
+    end
+
+    # Updates the item definitions of this schema using the Steam Web API
+    def fetch
+      params = { :language => language }
+      data = WebApi.json!("IEconItems_#{app_id}", 'GetSchema', 1, params)
+
+      @attributes = {}
+      data[:attributes].each do |attribute|
+        @attributes[attribute[:defindex]] = attribute
+        @attributes[attribute[:name]]     = attribute
+      end
+
+      @effects = {}
+      data[:attribute_controlled_attached_particles].each do |effect|
+        @effects[effect[:id]] = effect[:name]
+      end
+
+      @items = {}
+      @item_names = {}
+      data[:items].each do |item|
+        @items[item[:defindex]] = item
+        @item_names[item[:name]] = item[:defindex]
+      end
+
+      @item_levels = {}
+      data[:item_levels].each do |item_level_type|
+        @item_levels[item_level_type[:name]] = {}
+        item_level_type[:levels].each do |level|
+          @item_levels[item_level_type[:name]][level[:level]] = level[:name]
+        end
+      end if data.key? :item_levels
+
+      @item_sets = {}
+      data[:item_sets].each do |item_set|
+        @item_sets[item_set[:item_set]] = item_set
+      end
+
+      @origins = []
+      data[:originNames].each do |origin|
+        @origins[origin[:origin]] = origin[:name]
+      end
+
+      # @qualities = []
+      # data[:qualities].keys.each_with_index do |key, index|
+      #   @qualities[index] = data[:qualityNames][key] || key.to_s.capitalize
+      # end
+    end
+
+    # Returns a short, human-readable string representation of this item schema
+    #
+    # @return [String] A string representation of this item schema
+    def inspect
+      "#<#{self.class}:#@app_id (#@language) - #{fetch_time || 'not fetched'}>"
+    end
+  end
+
+  class DotaItem
+    attr_reader :attributes
+    attr_reader :backpack_position
+    attr_reader :count
+    attr_reader :defindex
+    attr_reader :id
+    attr_reader :inventory
+    attr_reader :item_class
+    attr_reader :item_set
+    attr_reader :level
+    attr_reader :origin
+    attr_reader :original_id
+    attr_reader :quality
+    attr_reader :type
+    attr_reader :item_schema
+
+    def name
+      @name.gsub(/^#DOTA_Item_/, '').gsub(/_/, ' ')
+    end
+
+    def craftable?
+      @craftable
+    end
+
+    def preliminary?
+      @preliminary
+    end
+
+    def tradeable?
+      @tradeable
+    end
+
+    def schema_data
+      item_schema.items[@defindex]
+    end
+
+    def initialize(item_data = {}, item_schema = {})
+      @item_schema       = item_schema
+      @defindex          = item_data[:defindex]
+      @backpack_position = item_data[:inventory] & 0xffff
+      @count             = item_data[:quantity]
+      @craftable         = !!item_data[:flag_cannot_craft]
+      @id                = item_data[:id]
+      @item_class        = schema_data[:item_class]
+      @item_set          = item_schema.item_sets[schema_data[:item_set]]
+      @level             = item_data[:level]
+      @name              = schema_data[:item_name]
+      @original_id       = item_data[:original_id]
+      @preliminary       = item_data[:inventory] & 0x40000000 != 0
+      # @quality           = item_schema.qualities[item_data[:quality]]
+      @tradeable         = !!item_data[:flag_cannot_trade]
+      @type              = schema_data[:item_type_name]
+
+      # if item_data.key? :origin
+      #   @origin = item_schema.origins[item_data[:origin]]
+      # end
+
+      # attributes_data = schema_data[:attributes] || []
+      attributes_data = []
+      attributes_data += item_data[:attributes] if item_data.key? :attributes
+
+      @attributes = []
+      attributes_data.each do |attribute_data|
+        attribute_key = attribute_data[:defindex] || attribute_data[:name]
+
+        # puts attribute_key
+        unless attribute_key.nil?
+          schema_attribute_data = item_schema.attributes[attribute_key]
+          @attributes << attribute_data.merge(schema_attribute_data)
+        end
+      end
+    end
+  end
+
+  module SteamApi
+    class Item
+      def initialize(name)
+        @name = name
+      end
+
+      def price
+        price = nil
+        response = HTTParty.get(page_url)
+        body = JSON.parse(response.body)
+        page = Nokogiri::HTML(body["results_html"])
+        unformatted_price = page.css("span[class='market_listing_price market_listing_price_with_fee']").first
+
+        price = unformatted_price.text.strip unless unformatted_price.nil?
+        price
+      end
+
+      private
+      def page_url
+        "http://steamcommunity.com/market/listings/570/#{URI.encode(@name)}/render/?query=&start=10&count=1&country=US&language=english&currency=1"
+      end
+    end
+  end
+
+  DATA_TO_SHOW = ["name", "expires", "discount_percent", "final_price"]
+  HOT = "red"
+  GOOD = "green"
 
   desc "sale", "List steam games for sale"
   option :sort, default: "expires",
-					      desc: "Sort by different columns. options: #{DATA_TO_SHOW}"
+                desc: "Sort by different columns. options: #{DATA_TO_SHOW}"
   def sale
-  	steam = Steam.new
-		steam.featured.each do |data|
-			# only show main ones
-			next if data[0] != "large_capsules"
+    steam = Steam.new
+    steam.featured.each do |data|
+      # only show main ones
+      next if data[0] != "large_capsules"
 
-			game_data = normalize_data(data[1])
+      game_data = normalize_data(data[1])
 
-			# Sort data by playtime
-			sort_method = options[:sort].to_s
-			sort_method = "discount_expiration" if options[:sort] == "expires"
+      # Sort data by playtime
+      sort_method = options[:sort].to_s
+      sort_method = "discount_expiration" if options[:sort] == "expires"
 
-			game_data = game_data.sort_by { |v| v[sort_method] }
+      game_data = game_data.sort_by { |v| v[sort_method] }
 
-			Formatador.display_table(game_data, DATA_TO_SHOW)
-		end
+      Formatador.display_table(game_data, DATA_TO_SHOW)
+    end
+  end
+
+  desc "dota USERNAME", "Lists dota items"
+  option :duplicates, type: :boolean, default: false,
+                      desc: "Only show items which are duplicates"
+  option :prices, type: :boolean, default: false,
+                  desc: "List prices of items"
+  # TODO: Option to only show items which aren't equipped
+  def dota(username='bretthardin')
+    require 'steam-condenser'
+    require 'steam/community/game_inventory'
+
+    @app_id = 570 # Dota2 ID
+    id = SteamId.new(username)
+    WebApi.api_key = ENV["STEAM_API_KEY"]
+    # inventory = GameInventory.new(570, id.steam_id64)
+
+    params = { :SteamID => id.steam_id64 }
+    result = WebApi.json! "IEconItems_#@app_id", 'GetPlayerItems', 1, params
+    # item_class = self.class.send :class_variable_get, :@@item_class
+
+    @item_schema = GameItemSchema.new(@app_id)
+    @item_schema.fetch
+
+    @items = []
+    result[:items].each do |item|
+
+      dota_item = DotaItem.new(item, @item_schema)
+      next if options[:duplicates] && dota_item.count <= 1
+
+      unless dota_item.tradeable? # Don't care about non-tradeables.
+        new_item = {}
+        new_item[:count] = dota_item.count
+        new_item[:name] = dota_item.name
+        new_item[:url] = "http://steamcommunity.com/market/listings/570/#{URI.encode(dota_item.name)}"
+        new_item[:price] = SteamApi::Item.new(dota_item.name).price if options[:prices]
+
+        @items.push(new_item)
+      end
+    end
+
+    @items = @items.sort_by { |v| v[:price] }
+
+    Formatador.display_table(@items)
   end
 
   GAMELIST_OPTIONS = [:name, :time, :percentage]
 
   desc "gamelist USERNAME", "List games that a user has"
   option :sort, default: :time,
-								desc: "Sort by different columns. options: #{GAMELIST_OPTIONS}"
+                desc: "Sort by different columns. options: #{GAMELIST_OPTIONS}"
   def gamelist(name)
-  	id = SteamId.new(name)
-		games = id.games
-		report = []
-		total_game_time = 0
+    id = SteamId.new(name)
+    games = id.games
+    report = []
+    total_game_time = 0
 
-		games.each do |game_id, game_data|
-			game = {}
+    games.each do |game_id, game_data|
+      game = {}
 
-			minutes_of_playtime = id.total_playtime(game_id)
-			total_game_time += minutes_of_playtime
-			game[:time] = Duration.new(:minutes => minutes_of_playtime).format("%w %~w, %d %~d, %h %~h")
-			game[:minutes] = minutes_of_playtime
-			game[:name] = game_data.name
+      minutes_of_playtime = id.total_playtime(game_id)
+      total_game_time += minutes_of_playtime
+      game[:time] = Duration.new(:minutes => minutes_of_playtime).format("%w %~w, %d %~d, %h %~h")
+      game[:minutes] = minutes_of_playtime
+      game[:name] = game_data.name
 
-			report.push(game)
-		end
+      report.push(game)
+    end
 
-		# Add percentage
-		report.each do |game|
-			 decimal = game[:minutes] / total_game_time.to_f
-			 game[:percentage] = "#{(decimal * 100).round(2)}" + " %"
-		end
+    # Add percentage
+    report.each do |game|
+       decimal = game[:minutes] / total_game_time.to_f
+       game[:percentage] = "#{(decimal * 100).round(2)}" + " %"
+    end
 
-		# Sort data by playtime
-		sort_method = options[:sort].to_sym
-		sort_method = :minutes if options[:sort] == :time
+    # Sort data by playtime
+    sort_method = options[:sort].to_sym
+    sort_method = :minutes if options[:sort] == :time
 
-		puts sort_method
+    report = report.sort_by { |v| v[sort_method] }
 
-		report = report.sort_by  { |v| v[sort_method] }
-
-		# Print data
-		Formatador.display_table(report, GAMELIST_OPTIONS)
+    # Print data
+    Formatador.display_table(report, GAMELIST_OPTIONS)
   end
 
   private
   def normalize_data(game_data)
-		new_game_data = []
+    new_game_data = []
 
-		game_data.each do |game|
-			# Don't care about non-discounted games
-			next if game["discount_expiration"] == nil
-			next if game["discounted"] == false
+    game_data.each do |game|
+      # Don't care about non-discounted games
+      next if game["discount_expiration"] == nil
+      next if game["discounted"] == false
 
-			game["expires"] = Time.at(game["discount_expiration"]).strftime("%b %d")
-			game["final_price"] = "$#{game['final_price']/100.to_f}"
-			game["original_price"] = "$#{game['original_price']/100.to_f}"
+      game["expires"] = Time.at(game["discount_expiration"]).strftime("%b %d")
+      game["final_price"] = "$#{game['final_price']/100.to_f}"
+      game["original_price"] = "$#{game['original_price']/100.to_f}"
 
-			# colorize
-			if game["discount_percent"] >= 75
-				game["discount_percent"] = "[#{HOT}]#{game['discount_percent']}[/]"
-			elsif game["discount_percent"] >= 33
-				game["discount_percent"] = "[#{GOOD}]#{game['discount_percent']}[/]"
-			end
+      # colorize
+      if game["discount_percent"] >= 75
+        game["discount_percent"] = "[#{HOT}]#{game['discount_percent']}[/]"
+      elsif game["discount_percent"] >= 33
+        game["discount_percent"] = "[#{GOOD}]#{game['discount_percent']}[/]"
+      end
 
-			new_game_data.push game
-		end
+      new_game_data.push game
+    end
 
-		new_game_data
-	end
+    new_game_data
+  end
 end
 
 DotaTest.start(ARGV)
