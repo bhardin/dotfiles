@@ -11,6 +11,7 @@ require 'formatador'
 require 'duration'
 require 'thor'
 require 'nokogiri'
+require 'unirest'
 
 class DotaTest < Thor
   class Steam
@@ -241,12 +242,12 @@ class DotaTest < Thor
     end
   end
 
-  DATA_TO_SHOW = ["name", "expires", "discount_percent", "final_price"]
+  DATA_TO_SHOW = ["name", "expires", "discount_percent", "final_price", "metacritic", "userscore"]
   HOT = "red"
   GOOD = "green"
 
   desc "sale", "List steam games for sale"
-  option :sort, default: "expires",
+  option :sort, default: "metacritic",
                 desc: "Sort by different columns. options: #{DATA_TO_SHOW}"
   def sale
     steam = Steam.new
@@ -350,30 +351,80 @@ class DotaTest < Thor
   end
 
   private
-  def normalize_data(game_data)
-    new_game_data = []
+    def metacritic_search(title)
+      score = ""
+      uri = "https://byroredux-metacritic.p.mashape.com/search/game"
+      headers = { "X-Mashape-Key" => ENV["MASHAPE_KEY"],
+                  "Content-Type" => "application/x-www-form-urlencoded" }
+      params = { "max_pages" => 1,
+                 "platform" => 3,
+                 "retry" => 4,
+                 "title" => title }
 
-    game_data.each do |game|
-      # Don't care about non-discounted games
-      next if game["discount_expiration"] == nil
-      next if game["discounted"] == false
+      response = Unirest.post(uri, headers: headers, parameters: params)
 
-      game["expires"] = Time.at(game["discount_expiration"]).strftime("%b %d")
-      game["final_price"] = "$#{game['final_price']/100.to_f}"
-      game["original_price"] = "$#{game['original_price']/100.to_f}"
-
-      # colorize
-      if game["discount_percent"] >= 75
-        game["discount_percent"] = "[#{HOT}]#{game['discount_percent']}[/]"
-      elsif game["discount_percent"] >= 33
-        game["discount_percent"] = "[#{GOOD}]#{game['discount_percent']}[/]"
+      if response.body["results"] && response.body["count"] == 1
+        score = response.body["results"][0]["score"] if response.body["results"][0]["score"]
+      else
+        score = "result count: #{response.body['count']}"
       end
 
-      new_game_data.push game
+      { score: score }
     end
 
-    new_game_data
-  end
+    def metacritic(title)
+      score = nil
+      userscore = nil
+      uri = "https://byroredux-metacritic.p.mashape.com/find/game"
+      headers = { "X-Mashape-Key" => ENV["MASHAPE_KEY"],
+                  "Content-Type" => "application/x-www-form-urlencoded" }
+      params = { "platform" => 3,
+                 "retry" => 4,
+                 "title" => title.gsub(/[^0-9A-Za-z ]/, '') }
+
+      response = Unirest.post(uri, headers: headers, parameters: params)
+
+      if response.body["result"]
+        score = response.body["result"]["score"] if response.body["result"]["score"]
+        userscore = response.body["result"]["userscore"] if response.body["result"]["userscore"]
+      end
+
+      unless score.nil?
+        { score: score, userscore: userscore }
+      else
+        metacritic_search(title)
+      end
+    end
+
+    def normalize_data(game_data)
+      new_game_data = []
+
+      game_data.each do |game|
+        # Don't care about non-discounted games
+        next if game["discount_expiration"] == nil
+        next if game["discounted"] == false
+
+        game["expires"] = Time.at(game["discount_expiration"]).strftime("%b %d")
+        game["final_price"] = "$#{game['final_price']/100.to_f}"
+        game["original_price"] = "$#{game['original_price']/100.to_f}"
+
+        # Grab Metacritic Data
+        metacritic_data = metacritic(game["name"])
+        game["metacritic"] = metacritic_data[:score]
+        game["userscore"] = metacritic_data[:userscore] if metacritic_data[:userscore]
+
+        # colorize
+        if game["discount_percent"] >= 75
+          game["discount_percent"] = "[#{HOT}]#{game['discount_percent']}[/]"
+        elsif game["discount_percent"] >= 33
+          game["discount_percent"] = "[#{GOOD}]#{game['discount_percent']}[/]"
+        end
+
+        new_game_data.push(game)
+      end
+
+      new_game_data
+    end
 end
 
 DotaTest.start(ARGV)
