@@ -7,4 +7,5 @@ then
   alias l="ls -lAh --color"
   alias ll="ls -l --color"
   alias la='ls -A --color'
+  alias gist='gist -c'
 fi
