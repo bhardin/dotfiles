@@ -136,8 +136,15 @@ install_dotfiles () {
   done
 }
 
+install_zsh_theme () {
+  local overwrite_all=false backup_all=false skip_all=false
+
+  link_file "$HOME/.dotfiles/zsh/brett.zsh-theme" "$HOME/.oh-my-zsh/themes/brett.zsh-theme"
+}
+
 setup_gitconfig
 install_dotfiles
+install_zsh_theme
 
 # If we're on a Mac, let's install and setup homebrew.
 if [ "$(uname -s)" == "Darwin" ]
