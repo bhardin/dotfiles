@@ -61,6 +61,11 @@ There's a few special files in the hierarchy.
   but still keep those autoloaded files in your home directory. These get
   symlinked in when you run `script/bootstrap`.
 
+
+## Secrets
+
+Some stuff you don't want on github... Like passwords you stash in your enviroment variables. This is what `~/.env-vars` is for. This means they'll stay out of your main dotfiles repository (which may be public, like this one), but you'll have access to them in your scripts.
+
 ## bugs
 
 I want this to work for everyone; that means when you clone it down it should
