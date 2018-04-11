@@ -1,15 +1,11 @@
-# Sample gitconfig
-#
-
+# Local/private config goes in the include
+[include]
+        path = ~/.gitconfig.local
 [hub]
         protocol = https
-[user]
-        name = AUTHORNAME
-        email = AUTHOREMAIL
-[credential]
-        helper = GIT_CREDENTIAL_HELPER
 [alias]
         co = checkout
+        st = status
         promote = !$ZSHDOT/bin/git-promote
         wtf     = !$ZSHDOT/bin/git-wtf
         rank-contributors = !$ZSHDOT/bin/git-rank-contributors
@@ -34,5 +30,5 @@
         # See `git help config` (search for push.default)
         # for more information on different options of the below setting.
         #
-        # Setting to git 2.0 default to surpress warning message
+        # Setting to git 2.0 default to suppress warning message
         default = simple
