@@ -1,4 +1,4 @@
-## dotfiles
+# dotfiles
 
 These dotfiles have been branched from
 [holman's dotfiles](https://github.com/holman/dotfiles). Most of the stuff
@@ -39,7 +39,6 @@ There's a few special files in the hierarchy.
   but still keep those autoloaded files in your home directory. These get
   symlinked in when you run `script/bootstrap`.
 
-
 ## Secrets
 
 Some stuff you don't want on github... Like passwords you stash in your enviroment variables. This is what `~/.env-vars` is for. This means they'll stay out of your main dotfiles repository (which may be public, like this one), but you'll have access to them in your scripts.
@@ -78,4 +77,3 @@ something if I forget to make a check for a dependency.
 If you're brand-new to the project and run into any blockers, please
 [open an issue](https://github.com/bhardin/dotfiles/issues) on this repository
 and I'd love to get it fixed for you!
-
