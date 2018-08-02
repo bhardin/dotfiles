@@ -20,4 +20,6 @@ alias gco='git checkout'
 alias gcb='git copy-branch-name'
 alias gb='git branch'
 alias gs='git status -sb' # upgrade your git if -sb breaks for you. it's fun.
-alias git-clean='git branch --merged | grep -v "\*" | xargs -n 1 git branch -d && git remote prune origin'
+
+## Delete merged branches, prune, and remove empty directories
+alias git-clean='git branch --merged | grep -v "\*" | xargs -n 1 git branch -d && git remote prune origin && find . -type d -empty -delete'
