@@ -10,6 +10,7 @@
         wtf     = !$ZSHDOT/bin/git-wtf
         rank-contributors = !$ZSHDOT/bin/git-rank-contributors
         count   = !git shortlog -sn
+	br = branch
 [color]
         diff = auto
         status = auto
