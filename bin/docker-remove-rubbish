@@ -1,0 +1,24 @@
+###
+## usage: curl https://gist.githubusercontent.com/waleedsamy/2b7b055a732072ebd46e3d308b39fd3e/raw/2465f28a997b92d97f14beb4c2f444b989faa740/docker-remove-rubbish.sh > ~/docker-remove-rubbish.sh && chmod +x ~/docker-remove-rubbish.sh && ~/docker-remove-rubbish.sh
+###
+
+containers=$(docker ps -aq)
+running_containers=$(docker ps -q)
+volumes=$(docker volume ls -q)
+images=$(docker images -qf dangling=true)
+
+if [ ! -z "$running_containers" ];then
+        docker kill $running_containers
+fi
+
+if [ ! -z "$containers" ];then
+        docker rm $containers
+fi
+
+if [ ! -z "$images" ];then
+        docker rmi $images;
+fi
+
+if [ ! -z "$volumes" ];then
+        docker volume rm $volumes
+fi
