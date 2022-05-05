@@ -1,1 +1,1 @@
-/Users/bretthardin/.env-vars
+/Users/brett/.env-vars
