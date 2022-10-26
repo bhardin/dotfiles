@@ -1,6 +1,6 @@
 # If using python virtual environments
-# eval "$(pyenv init -)"
-# eval "$(pyenv virtualenv-init -)"
+eval "$(pyenv init -)"
+if which pyenv-virtualenv-init > /dev/null; then eval "$(pyenv virtualenv-init -)"; fi
 
 # Poetry
 export PATH="$HOME/.poetry/bin:$PATH"
