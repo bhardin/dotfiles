@@ -40,6 +40,15 @@ done
 
 unset config_files
 
+# AWS vault
+if [[ $(command -v aws-vault) ]]; then
+  eval "$(aws-vault --completion-script-zsh)"
+  [[ -n "$AWS_VAULT" ]] && PS1="%{$fg[yellow]%}[aws::$AWS_VAULT]%{$reset_color%} $PS1"
+fi
+
+
+
+
 # Better history
 # Credits to https://coderwall.com/p/jpj_6q/zsh-better-history-searching-with-arrow-keys
 autoload -U up-line-or-beginning-search
