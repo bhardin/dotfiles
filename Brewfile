@@ -4,10 +4,10 @@ tap 'homebrew/bundle'
 
 # Standard Brew packages
 brew 'hub'                  # For using helpful command line github utilities
-brew 'postgresql'
+brew 'postgresql@14'
 brew 'pre-commit'           # For pre-commit hooks
 brew 'wget'
-brew 'python-dev'           # python c bindings
+# brew 'python-dev'           # python c bindings
 brew 'pyenv'                # python shims
 brew 'pyenv-virtualenv'     # python virtual env
 
