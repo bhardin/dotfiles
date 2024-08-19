@@ -51,7 +51,7 @@ First things first, if you aren't using zsh...
 Run this:
 
 ```sh
-git clone https://github.com/bhardin/dotfiles.git
+git clone https://github.com/bhardin/dotfiles.git .dotfiles
 cd ~/.dotfiles
 script/bootstrap
 ```
