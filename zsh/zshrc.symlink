@@ -64,3 +64,4 @@ alias mintdev='PATH="/opt/homebrew/opt/node@22/bin:$PATH" mint dev'
 
 # fnm (Node version manager) — auto-switches Node per directory via .nvmrc
 eval "$(fnm env --use-on-cd)"
+eval "$(direnv hook zsh)"
