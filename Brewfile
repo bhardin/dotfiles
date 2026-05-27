@@ -24,6 +24,8 @@ brew 'postgresql@15'        # Version 15
 brew 'redis'                # k/v store
 brew 'cloudflared'
 
+# github helpers
+brew 'gh'
 
 # Cask is for installing mac applications
 cask '1password'
