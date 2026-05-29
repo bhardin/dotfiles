@@ -41,7 +41,11 @@ There's a few special files in the hierarchy.
 
 ## Secrets
 
-Some stuff you don't want on github... Like passwords you stash in your enviroment variables. This is what `~/.env-vars` is for. This means they'll stay out of your main dotfiles repository (which may be public, like this one), but you'll have access to them in your scripts.
+Some stuff you don't want on github... Like passwords you stash in your enviroment variables. This is what `~/.env-vars` is for. This means they'll stay out of your main dotfiles repository (which may be public, like this one), but you'll have access to them in your scripts. Example:
+
+```bash
+export SUPERSECRET=myreallysecurepassword
+```
 
 ## install
 
