@@ -58,6 +58,9 @@ zle -N down-line-or-beginning-search
 bindkey "^[[A" up-line-or-beginning-search # Up
 bindkey "^[[B" down-line-or-beginning-search # Down
 
+# Run Mintlify docs preview with Node 22 (mint blocks Node 25+; global node is 26)
+alias mintdev='PATH="/opt/homebrew/opt/node@22/bin:$PATH" mint dev'
+
 # Find local branches that have been squash-merged into origin/main.
 # Pass --test (or -n) for a dry-run that only lists candidates.
 # Without flags, deletes them with `git branch -D`.
