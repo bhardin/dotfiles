@@ -27,3 +27,5 @@
 
 # Mac Stuff
 .DS_Store
+
+**/.claude/settings.local.json
