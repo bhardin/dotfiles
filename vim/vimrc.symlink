@@ -3,3 +3,7 @@ set tabstop=2
 set shiftwidth=2
 set expandtab
 set term=builtin_ansi
+
+" Use F2 to toggle pastemode
+" set pastetoggle=<F2>
+set paste   " Disables a lot of nice formatting in vim
