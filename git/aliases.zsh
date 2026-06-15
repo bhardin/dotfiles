@@ -26,4 +26,7 @@ alias gs='git status -sb' # upgrade your git if -sb breaks for you. it's fun.
 git config --global alias.compare "!gh pr create --web"
 
 ## Delete merged branches, prune, and remove empty directories
-alias git-clean='git branch --merged | grep -v "\*" | xargs -n 1 git branch -d && git remote prune origin && find . -type d -empty -delete'
+# alias git-clean='git branch --merged | grep -v "\*" | xargs -n 1 git branch -d && git remote prune origin && find . -type d -empty -delete'
+
+# Delete squashed branches
+alias git-clean=git-prune-squashed # in .zshrc
