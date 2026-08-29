@@ -28,5 +28,5 @@ git config --global alias.compare "!gh pr create --web"
 ## Delete merged branches, prune, and remove empty directories
 # alias git-clean='git branch --merged | grep -v "\*" | xargs -n 1 git branch -d && git remote prune origin && find . -type d -empty -delete'
 
-# Delete squashed branches
-alias git-clean=git-prune-squashed # in .zshrc
+# Delete branches already merged into origin's default branch, any merge strategy
+alias git-clean=git-prune-merged # bin/git-prune-merged (also `git prune-merged`)

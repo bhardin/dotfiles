@@ -1,0 +1,156 @@
+#!/usr/bin/env zsh
+#
+# git-prune-merged — delete local branches already merged into origin's default
+# branch, regardless of merge strategy. Also runnable as `git prune-merged`,
+# and aliased to `git-clean`.
+#
+# A branch counts as merged if EITHER:
+#   1. its tip is an ancestor of the base -> merge-commit / fast-forward /
+#      rebase-and-merge (branch commits live in base history verbatim), or
+#   2. its cumulative change is patch-equivalent to the base -> squash merge
+#      (which rewrites SHAs, so `git branch --merged` misses it).
+#
+# --gh switches to the authoritative signal: a branch is merged iff its PR is
+# merged on GitHub (any strategy, no drift blind spot), via one `gh` API call.
+#
+# Base branch is auto-detected from origin/HEAD (fallback: main, then master),
+# so this works unchanged in any repo.
+
+dry_run=0
+use_gh=0
+
+while (( $# )); do
+  case "$1" in
+    -h|--help)
+      cat <<'HELP'
+git-prune-merged (aka `git prune-merged`, aliased `git-clean`) — delete local
+branches already merged into origin's default branch, regardless of strategy.
+
+Usage:
+  git-clean [-n|--test] [--gh]
+  git-clean -h|--help
+
+Detection (default, pure git — fast, offline):
+  A branch is merged if EITHER
+    - its tip is an ancestor of the base (merge-commit / fast-forward / rebase), OR
+    - its cumulative change is patch-equivalent to the base (squash merge).
+  Blind spot: misses squash merges once the base has drifted far from the
+  branch's merge-base.
+
+Options:
+  --gh         Authoritative mode: a branch is merged iff its PR is merged on
+               GitHub. Covers any strategy with no drift blind spot. Requires
+               the gh CLI (authed) and a network call. Replaces the git heuristic.
+  -n, --test   Dry run: list what would be deleted, delete nothing.
+  -h, --help   Show this help.
+
+Base branch is auto-detected from origin/HEAD (fallback: main, then master).
+Deleting a branch also removes its worktree; a worktree with uncommitted
+changes is skipped.
+HELP
+      exit 0
+      ;;
+    -n|--test) dry_run=1 ;;
+    --gh) use_gh=1 ;;
+    *) print -u2 "git-prune-merged: unknown option: $1 (try -h)"; exit 2 ;;
+  esac
+  shift
+done
+
+git rev-parse --git-dir >/dev/null 2>&1 || { print -u2 "not a git repository"; exit 1 }
+
+# Remote default branch, falling back to main then master.
+base_ref=$(git symbolic-ref --quiet refs/remotes/origin/HEAD 2>/dev/null)
+if [[ -n "$base_ref" ]]; then
+  base=${base_ref#refs/remotes/origin/}
+elif git show-ref --verify --quiet refs/remotes/origin/main; then
+  base=main
+elif git show-ref --verify --quiet refs/remotes/origin/master; then
+  base=master
+else
+  print -u2 "could not determine origin's default branch"; exit 1
+fi
+
+target="origin/$base"
+current=$(git symbolic-ref --short HEAD 2>/dev/null)
+
+typeset -a merged
+branch=""
+
+if (( use_gh )); then
+  command -v gh >/dev/null 2>&1 || { print -u2 "--gh requires the gh CLI (not found)"; exit 1 }
+
+  # One API call: the head branch name of every merged PR -> a lookup set.
+  gh_out=$(gh pr list --state merged --limit 500 --json headRefName -q '.[].headRefName' 2>/dev/null) \
+    || { print -u2 "gh pr list failed (auth? network?)"; exit 1 }
+
+  typeset -A merged_prs
+  head=""
+  while IFS= read -r head; do
+    [[ -n "$head" ]] && merged_prs[$head]=1
+  done <<< "$gh_out"
+
+  while IFS= read -r branch; do
+    [[ "$branch" == "$base" || "$branch" == "$current" ]] && continue
+    [[ -n "${merged_prs[$branch]}" ]] && merged+=("$branch")
+  done < <(git for-each-ref refs/heads/ --format='%(refname:short)')
+else
+  git fetch origin "$base" --quiet || { print -u2 "fetch failed"; exit 1 }
+
+  while IFS= read -r branch; do
+    [[ "$branch" == "$base" || "$branch" == "$current" ]] && continue
+
+    # 1. merge-commit / fast-forward / rebase: branch tip is in base history.
+    if git merge-base --is-ancestor "$branch" "$target" 2>/dev/null; then
+      merged+=("$branch")
+      continue
+    fi
+
+    # 2. squash merge: branch's cumulative change is patch-equivalent in base.
+    mergeBase=$(git merge-base "$target" "$branch" 2>/dev/null) || continue
+    tree=$(git rev-parse "$branch^{tree}")
+    commit=$(git commit-tree "$tree" -p "$mergeBase" -m _)
+    if git cherry "$target" "$commit" 2>/dev/null | grep -q '^-'; then
+      merged+=("$branch")
+    fi
+  done < <(git for-each-ref refs/heads/ --format='%(refname:short)')
+fi
+
+if (( ${#merged[@]} == 0 )); then
+  print "No merged branches found (base: $base)."
+  exit 0
+fi
+
+# Map a branch to the worktree checking it out (empty if none).
+worktree_for() {
+  git worktree list --porcelain | awk -v b="refs/heads/$1" '
+    $1 == "worktree" { wt = $2 }
+    $1 == "branch" && $2 == b { print wt; exit }
+  '
+}
+
+if (( dry_run )); then
+  print "Would delete ${#merged[@]} merged branch(es) (base: $base):"
+  for branch in "${merged[@]}"; do
+    wt=$(worktree_for "$branch")
+    if [[ -n "$wt" ]]; then
+      print "  $branch (worktree $wt)"
+    else
+      print "  $branch"
+    fi
+  done
+  exit 0
+fi
+
+print "Deleting ${#merged[@]} merged branch(es) (base: $base):"
+for branch in "${merged[@]}"; do
+  wt=$(worktree_for "$branch")
+  if [[ -n "$wt" ]]; then
+    print "  removing worktree $wt for $branch"
+    git worktree remove "$wt" || {
+      print -u2 "  could not remove worktree $wt (uncommitted changes?); skipping $branch"
+      continue
+    }
+  fi
+  git branch -D "$branch"
+done

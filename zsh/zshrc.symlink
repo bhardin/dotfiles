@@ -61,55 +61,6 @@ bindkey "^[[B" down-line-or-beginning-search # Down
 # Run Mintlify docs preview with Node 22 (mint blocks Node 25+; global node is 26)
 alias mintdev='PATH="/opt/homebrew/opt/node@22/bin:$PATH" mint dev'
 
-# Find local branches that have been squash-merged into origin/main.
-# Pass --test (or -n) for a dry-run that only lists candidates.
-# Without flags, deletes them with `git branch -D`.
-#
-# Uses tree-equality via `git commit-tree` + `git cherry` because squash-merge
-# rewrites SHAs, which makes `git branch --merged` useless.
-git-prune-squashed() {
-  local dry_run=0
-  if [[ "$1" == "--test" || "$1" == "-n" ]]; then
-    dry_run=1
-  fi
 
-  local target="origin/main"
-
-  git fetch origin main --quiet || { print -u2 "fetch failed"; return 1 }
-
-  local current
-  current=$(git symbolic-ref --short HEAD 2>/dev/null)
-
-  local -a merged
-  local branch mergeBase tree commit
-
-  while IFS= read -r branch; do
-    [[ "$branch" == "main" || "$branch" == "master" || "$branch" == "$current" ]] && continue
-
-    mergeBase=$(git merge-base "$target" "$branch" 2>/dev/null) || continue
-    tree=$(git rev-parse "$branch^{tree}")
-    commit=$(git commit-tree "$tree" -p "$mergeBase" -m _)
-
-    if git cherry "$target" "$commit" 2>/dev/null | grep -q '^-'; then
-      merged+=("$branch")
-    fi
-  done < <(git for-each-ref refs/heads/ --format='%(refname:short)')
-
-  if (( ${#merged[@]} == 0 )); then
-    print "No squash-merged branches found."
-    return 0
-  fi
-
-  if (( dry_run )); then
-    print "Would delete ${#merged[@]} squash-merged branch(es):"
-    for branch in "${merged[@]}"; do
-      print "  $branch"
-    done
-    return 0
-  fi
-
-  print "Deleting ${#merged[@]} squash-merged branch(es):"
-  for branch in "${merged[@]}"; do
-    git branch -D "$branch"
-  done
-}
+# fnm (Node version manager) — auto-switches Node per directory via .nvmrc
+eval "$(fnm env --use-on-cd)"
