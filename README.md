@@ -47,6 +47,30 @@ Some stuff you don't want on github... Like passwords you stash in your envirome
 export SUPERSECRET=myreallysecurepassword
 ```
 
+## Private dotfiles
+
+That covers a stray env var. For a whole *section* of dotfiles you don't want
+public — personal config, machine-specific setup — there's a second,
+**private** GitHub repo cloned into `private/`.
+
+It's just another topic area, kept out of this public repo but installed by it:
+
+- This repo's `.gitignore` ignores `private/`, so the public repo never tracks
+  it and holds no reference to it.
+- `script/install` runs `find . -name install.sh` over the whole tree. `find`
+  walks the filesystem, so it discovers `private/install.sh` despite the
+  `.gitignore`, and runs it. The private repo wires itself up.
+
+So: the public repo ignores the directory on disk, `script/install` runs its
+installer from disk. No submodule, no coupling. Set it up on a new machine:
+
+```sh
+git clone <your-private-dotfiles-repo> ~/.dotfiles/private
+cd ~/.dotfiles && script/install
+```
+
+See `private/README.md` for its layout and conventions.
+
 ## install
 
 First things first, if you aren't using zsh...

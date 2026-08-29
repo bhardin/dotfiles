@@ -10,3 +10,8 @@ atom.symlink/blob-store
 atom.symlink/recovery
 
 git/gitconfig.local.symlink
+
+# Private dotfiles — a separate, private GitHub repo cloned into private/.
+# The public repo must never track it, but still installs it: script/install's
+# `find . -name install.sh` reaches private/install.sh on disk despite this.
+private/
