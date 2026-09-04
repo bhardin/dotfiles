@@ -25,10 +25,6 @@ alias gs='git status -sb' # upgrade your git if -sb breaks for you. it's fun.
 # Replicates "git compare" from hub
 git config --global alias.compare "!gh pr create --web"
 
-# Common ones I use
-alias git-oneline='git log --oneline --reverse'
-
-
 ## Delete merged branches, prune, and remove empty directories
 # alias git-clean='git branch --merged | grep -v "\*" | xargs -n 1 git branch -d && git remote prune origin && find . -type d -empty -delete'
 

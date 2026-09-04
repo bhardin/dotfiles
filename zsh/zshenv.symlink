@@ -1,0 +1,6 @@
+# .zshenv is sourced for EVERY zsh invocation (login, non-login,
+# interactive, non-interactive). PATH that must exist in non-interactive
+# shells (e.g. Claude Code's shell) belongs here, not in .zshrc.
+
+# Ruby user-install gem binaries (boom text snippets, etc.)
+export PATH="$HOME/.gem/ruby/2.6.0/bin:$PATH"
