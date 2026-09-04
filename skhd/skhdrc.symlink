@@ -1,0 +1,2 @@
+# Ctrl+Cmd+Esc -> sleep all displays (machine keeps running)
+ctrl + cmd - escape : pmset displaysleepnow
