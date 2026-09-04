@@ -16,10 +16,11 @@ Subcommands:
   show [range-or-none]             Diagnostic: print what the pending commit (or a
                                     range) would be attributed, without writing.
 
-Attribution is a heuristic: it sums transcript usage stamped to the current branch
-(gitBranch) and this repo (cwd), between the parent commit's timestamp and now,
-deduped by API requestId. Work on another branch in the same session is filtered
-out by branch. Idle time costs nothing.
+Attribution is a heuristic: it sums transcript usage recorded in this repo (cwd
+under the repo root), between the parent commit's timestamp and now, deduped by
+API requestId. It does NOT filter by git branch: work is often done on one branch
+then committed on another (branched late), so branch-scoping would miss it. Idle
+time costs nothing.
 
 "Tokens" is total metered tokens: input + cache-creation + cache-read + output.
 "Cost" prices each bucket at its own rate (cache read 0.1x input, 5m write 1.25x,
@@ -81,7 +82,7 @@ def _parse_ts(s):
         return None
 
 
-def _collect(repo_root, branch, since, until):
+def _collect(repo_root, since, until):
     """Sum tokens and cost across transcript usage in the window. Deduped by requestId."""
     root = os.path.realpath(repo_root)
     seen = {}  # requestId -> usage dict (last wins)
@@ -124,8 +125,6 @@ def _collect(repo_root, branch, since, until):
                     except json.JSONDecodeError:
                         continue
                     if rec.get("type") != "assistant":
-                        continue
-                    if branch is not None and rec.get("gitBranch") != branch:
                         continue
                     cwd = rec.get("cwd")
                     if cwd:
@@ -197,13 +196,10 @@ def cmd_stamp(argv):
     repo_root = _git("rev-parse", "--show-toplevel")
     if not repo_root:
         return 0
-    branch = _git("rev-parse", "--abbrev-ref", "HEAD", cwd=repo_root) or None
-    if branch == "HEAD":  # detached
-        branch = None
     parent_ts = _parse_ts(_git("log", "-1", "--format=%cI", cwd=repo_root))
     now = datetime.now(timezone.utc)
 
-    tokens, cost, _ = _collect(repo_root, branch, parent_ts, now)
+    tokens, cost, _ = _collect(repo_root, parent_ts, now)
     if tokens == 0:
         return 0  # nothing to attribute; leave the message clean
 
@@ -250,12 +246,11 @@ def cmd_total(argv):
 
 def cmd_show(argv):
     repo_root = _git("rev-parse", "--show-toplevel")
-    branch = _git("rev-parse", "--abbrev-ref", "HEAD", cwd=repo_root) or None
     parent_ts = _parse_ts(_git("log", "-1", "--format=%cI", cwd=repo_root))
     now = datetime.now(timezone.utc)
-    tokens, cost, unknown = _collect(repo_root, branch, parent_ts, now)
+    tokens, cost, unknown = _collect(repo_root, parent_ts, now)
     since = parent_ts.isoformat() if parent_ts else "(unborn)"
-    print(f"branch={branch} since={since}")
+    print(f"repo={repo_root} since={since}")
     print(f"Tokens: {tokens:,}")
     print(f"Cost: ${cost:.4f}")
     if unknown:
