@@ -1,0 +1,282 @@
+#!/usr/bin/env python3
+"""Stamp and total Claude token/cost trailers on git commits.
+
+The trailers are the ledger. Each commit carries what the Claude session burned
+producing it, read from the session transcripts under ~/.claude/projects. The PR
+footer is the sum of those trailers across a range.
+
+Subcommands:
+  stamp <msgfile> [source] [sha]   Append Tokens:/Cost: trailers to a commit
+                                    message. Used by the prepare-commit-msg hook.
+                                    Never exits non-zero: a hook must not block a
+                                    commit.
+  total <range>                    Sum the Tokens:/Cost: trailers across a commit
+                                    range (e.g. origin/main..HEAD) and print one
+                                    footer line. Used by /pr-description.
+  show [range-or-none]             Diagnostic: print what the pending commit (or a
+                                    range) would be attributed, without writing.
+
+Attribution is a heuristic: it sums transcript usage stamped to the current branch
+(gitBranch) and this repo (cwd), between the parent commit's timestamp and now,
+deduped by API requestId. Work on another branch in the same session is filtered
+out by branch. Idle time costs nothing.
+
+"Tokens" is total metered tokens: input + cache-creation + cache-read + output.
+"Cost" prices each bucket at its own rate (cache read 0.1x input, 5m write 1.25x,
+1h write 2.0x).
+"""
+
+import glob
+import json
+import os
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+# Base rates in USD per token. Cache rates are input-rate multiples unless a model
+# overrides cache_read (Fable 5.1 / Mythos 5.1 read at a flat $0.25/MTok).
+# Source: claude-api skill live pricing table, cached 2026-06-24.
+_M = 1_000_000
+_BASE = {
+    "claude-opus-5": (5.0, 25.0),
+    "claude-opus-4-8": (5.0, 25.0),
+    "claude-opus-4-7": (5.0, 25.0),
+    "claude-opus-4-6": (5.0, 25.0),
+    "claude-sonnet-5": (2.0, 10.0),
+    "claude-sonnet-4-6": (3.0, 15.0),
+    "claude-haiku-4-5": (1.0, 5.0),
+    "claude-fable-5-1": (10.0, 50.0),
+    "claude-fable-5": (10.0, 50.0),
+    "claude-mythos-5-1": (10.0, 50.0),
+}
+_CACHE_READ_OVERRIDE = {  # flat $/MTok, not an input multiple
+    "claude-fable-5-1": 0.25,
+    "claude-mythos-5-1": 0.25,
+}
+
+
+def _rates(model):
+    """Return per-token rates (in, out, read, write5m, write1h) or None if unknown."""
+    base = _BASE.get(model)
+    if base is None:
+        return None
+    inp, out = base[0] / _M, base[1] / _M
+    read = _CACHE_READ_OVERRIDE.get(model, base[0] * 0.1) / _M
+    return inp, out, read, base[0] * 1.25 / _M, base[0] * 2.0 / _M
+
+
+def _git(*args, cwd=None):
+    return subprocess.run(
+        ["git", *args], cwd=cwd, capture_output=True, text=True
+    ).stdout.strip()
+
+
+def _parse_ts(s):
+    if not s:
+        return None
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00")).astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
+def _collect(repo_root, branch, since, until):
+    """Sum tokens and cost across transcript usage in the window. Deduped by requestId."""
+    root = os.path.realpath(repo_root)
+    seen = {}  # requestId -> usage dict (last wins)
+    home = Path.home()
+    # Only files touched since the window opened can hold a record inside it.
+    # This keeps a commit hook from re-reading the whole ~700MB transcript
+    # corpus (thousands of files) on every commit.
+    # A commit hook must stay fast against a ~1GB, multi-thousand-file transcript
+    # corpus. Two bounds keep every commit sub-second:
+    #   1. Skip files not modified since the window opened. A file untouched
+    #      since the parent commit can't hold a record newer than it.
+    #   2. Read at most MAX_FILES of the newest survivors. On an unborn branch
+    #      (no parent) the floor is 1 day, so a brand-new repo's first commit
+    #      never scans the whole history.
+    MAX_FILES = 40
+    if since is not None:
+        since_epoch = since.timestamp()
+    else:
+        base = until.timestamp() if until is not None else datetime.now(timezone.utc).timestamp()
+        since_epoch = base - 86400
+    candidates = []
+    for path in glob.glob(str(home / ".claude" / "projects" / "*" / "*.jsonl")):
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            continue
+        if mtime < since_epoch:
+            continue
+        candidates.append((mtime, path))
+    candidates.sort(reverse=True)
+    for _, path in candidates[:MAX_FILES]:
+        try:
+            with open(path, encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line or '"usage"' not in line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if rec.get("type") != "assistant":
+                        continue
+                    if branch is not None and rec.get("gitBranch") != branch:
+                        continue
+                    cwd = rec.get("cwd")
+                    if cwd:
+                        rc = os.path.realpath(cwd)
+                        if rc != root and not rc.startswith(root + os.sep):
+                            continue
+                    ts = _parse_ts(rec.get("timestamp"))
+                    if ts is None:
+                        continue
+                    if since is not None and ts <= since:
+                        continue
+                    if until is not None and ts > until:
+                        continue
+                    msg = rec.get("message", {})
+                    usage = msg.get("usage")
+                    if not usage:
+                        continue
+                    key = rec.get("requestId") or rec.get("uuid")
+                    seen[key] = (msg.get("model"), usage)
+        except OSError:
+            continue
+
+    tokens = 0
+    cost = 0.0
+    unknown = set()
+    for model, u in seen.values():
+        inp = u.get("input_tokens", 0) or 0
+        out = u.get("output_tokens", 0) or 0
+        read = u.get("cache_read_input_tokens", 0) or 0
+        create = u.get("cache_creation_input_tokens", 0) or 0
+        breakdown = u.get("cache_creation") or {}
+        w1h = breakdown.get("ephemeral_1h_input_tokens", 0) or 0
+        w5m = breakdown.get("ephemeral_5m_input_tokens", 0) or 0
+        if not (w1h or w5m):  # no breakdown: treat all creation as 5m
+            w5m = create
+        tokens += inp + out + read + create
+        rates = _rates(model)
+        if rates is None:
+            if model:
+                unknown.add(model)
+            continue
+        ri, ro, rr, r5, r1 = rates
+        cost += inp * ri + out * ro + read * rr + w5m * r5 + w1h * r1
+    return tokens, cost, unknown
+
+
+def _has_trailers(text):
+    return any(
+        line.startswith("Tokens:") for line in text.splitlines()
+    )
+
+
+def cmd_stamp(argv):
+    # Args mirror the prepare-commit-msg hook: <msgfile> [source] [sha]
+    if not argv:
+        return 0
+    msgfile = argv[0]
+    source = argv[1] if len(argv) > 1 else ""
+    if source in ("merge", "squash"):  # don't stamp merges/squashes
+        return 0
+    try:
+        with open(msgfile, encoding="utf-8") as fh:
+            body = fh.read()
+    except OSError:
+        return 0
+    if _has_trailers(body):  # idempotent: already stamped (amend/rebase reword)
+        return 0
+
+    repo_root = _git("rev-parse", "--show-toplevel")
+    if not repo_root:
+        return 0
+    branch = _git("rev-parse", "--abbrev-ref", "HEAD", cwd=repo_root) or None
+    if branch == "HEAD":  # detached
+        branch = None
+    parent_ts = _parse_ts(_git("log", "-1", "--format=%cI", cwd=repo_root))
+    now = datetime.now(timezone.utc)
+
+    tokens, cost, _ = _collect(repo_root, branch, parent_ts, now)
+    if tokens == 0:
+        return 0  # nothing to attribute; leave the message clean
+
+    # Insert trailers below the message, above any comment lines git will strip.
+    lines = body.splitlines()
+    cut = len(lines)
+    for i, line in enumerate(lines):
+        if line.startswith("#"):
+            cut = i
+            break
+    while cut > 0 and lines[cut - 1].strip() == "":
+        cut -= 1
+    trailers = ["", f"Tokens: {tokens:,}", f"Cost: ${cost:.2f}"]
+    new = lines[:cut] + trailers + ([""] + lines[cut:] if cut < len(lines) else [])
+    try:
+        with open(msgfile, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(new) + "\n")
+    except OSError:
+        return 0
+    return 0
+
+
+def _sum_trailer(rng, key):
+    out = _git("log", rng, f"--format=%(trailers:key={key},valueonly)")
+    total = 0.0
+    for tok in out.replace("$", "").replace(",", "").split():
+        try:
+            total += float(tok)
+        except ValueError:
+            continue
+    return total
+
+
+def cmd_total(argv):
+    if not argv:
+        sys.stderr.write("usage: claude-commit-tokens total <range>\n")
+        return 2
+    rng = argv[0]
+    tokens = int(_sum_trailer(rng, "Tokens"))
+    cost = _sum_trailer(rng, "Cost")
+    print(f"Tokens used: {tokens:,} · API cost: ${cost:.2f}")
+    return 0
+
+
+def cmd_show(argv):
+    repo_root = _git("rev-parse", "--show-toplevel")
+    branch = _git("rev-parse", "--abbrev-ref", "HEAD", cwd=repo_root) or None
+    parent_ts = _parse_ts(_git("log", "-1", "--format=%cI", cwd=repo_root))
+    now = datetime.now(timezone.utc)
+    tokens, cost, unknown = _collect(repo_root, branch, parent_ts, now)
+    since = parent_ts.isoformat() if parent_ts else "(unborn)"
+    print(f"branch={branch} since={since}")
+    print(f"Tokens: {tokens:,}")
+    print(f"Cost: ${cost:.4f}")
+    if unknown:
+        print(f"unpriced models (counted, not costed): {', '.join(sorted(unknown))}", file=sys.stderr)
+    return 0
+
+
+def main():
+    if len(sys.argv) < 2:
+        sys.stderr.write(__doc__)
+        return 2
+    cmd, rest = sys.argv[1], sys.argv[2:]
+    if cmd == "stamp":
+        return cmd_stamp(rest)
+    if cmd == "total":
+        return cmd_total(rest)
+    if cmd == "show":
+        return cmd_show(rest)
+    sys.stderr.write(f"unknown subcommand: {cmd}\n")
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

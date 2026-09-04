@@ -1,0 +1,27 @@
+#!/bin/sh
+# Global prepare-commit-msg, wired via a global core.hooksPath so it runs in
+# every repo. It stamps Claude token/cost trailers, then chains to the repo's
+# own prepare-commit-msg if it has one.
+#
+# Guarantees:
+#   1. The stamp never blocks a commit: its failure is swallowed.
+#   2. A global core.hooksPath shadows each repo's .git/hooks, so we explicitly
+#      re-run the repo-local hook and hand back its exit code.
+#   3. No recursion. The sentinel below stops this hook re-entering itself, and
+#      the chain targets $GIT_DIR/hooks directly, NOT `git rev-parse --git-path
+#      hooks` (which returns core.hooksPath, i.e. this file, and would loop).
+#
+# Not reached: repos that set their OWN core.hooksPath (e.g. Husky's .husky).
+# Git uses the local hooksPath there and ignores this one entirely.
+[ -n "$CCT_HOOK_ACTIVE" ] && exit 0
+CCT_HOOK_ACTIVE=1
+export CCT_HOOK_ACTIVE
+
+claude-commit-tokens stamp "$1" "$2" "$3" 2>/dev/null || true
+
+git_dir="$(git rev-parse --absolute-git-dir 2>/dev/null)" || exit 0
+local_hook="$git_dir/hooks/prepare-commit-msg"
+if [ -x "$local_hook" ]; then
+	exec "$local_hook" "$@"
+fi
+exit 0
