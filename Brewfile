@@ -1,6 +1,7 @@
 cask_args appdir: '/Applications'
 
 tap 'homebrew/bundle'
+tap 'koekeishiya/formulae'  # skhd, hotkey daemon
 
 # Standard Brew packages
 brew 'hub'                  # For using helpful command line github utilities
@@ -23,6 +24,7 @@ brew 'npm'
 brew 'postgresql@15'        # Version 15
 brew 'redis'                # k/v store
 brew 'cloudflared'
+brew 'koekeishiya/formulae/skhd'  # hotkey daemon (~/.skhdrc)
 
 # github helpers
 brew 'gh'
